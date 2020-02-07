@@ -1,12 +1,12 @@
-#This repo is to commit Spark Practice 
+# This repo is to commit Spark Practice 
 
 
-##List example
+## List example
 * one
 * two
 * three
 
-##Table example
+## Table example
 
 | Tables        | Are           | Cool  |
 | ------------- |:-------------:| -----:|
