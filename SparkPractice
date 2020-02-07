@@ -1,0 +1,112 @@
+/*
+val intRdd = authorBook.map{case(a,b) => a.size}
+authorBook.collect().foreach{case(a,b) =>  a.length} // foreach is unit type so can't return anything
+def stringConcat(input1:String,input2:String):String = {
+  input1.concat(input2)
+}
+val list = authorBook.map{case(a,b) =>  stringConcat(a,b)}.collect()
+
+val renameSchema = schemaColumn.map(column => column.concat("_new"))
+//how to rename shcema
+val df2 = df.toDF(renameSchema:_*)
+df2.explain
+val df3 = df.withColumnRenamed("author" ,"author_new")
+df3.explain
+
+//foldLeft use same operation on multiple column
+val df4 = df.columns.foldLeft(df){(testDf,colName) => testDf.withColumn(colName,regexp_replace(col(colName), "\\s+" , "_"))}
+df4.show
+
+*/
+
+import org.apache.spark.sql.functions.{col,regexp_replace,broadcast,avg}
+import org.apache.spark.sql.expressions.{Window}
+
+val authorBook = sc.parallelize(Seq(("a1" , "b1") , ("a1","b2") , ("a2" , "b3"),("a3" , "b4")))
+val schemaColumn = Seq("author","book")
+val df = authorBook.toDF(schemaColumn:_*)
+
+val bookSold = sc.parallelize(Seq(("b1",100) , ("b2" , 500) , ("b3" , 400) , ("b4" , 500)) )
+val bookSchema = Seq("book" , "sold_copy")
+val dfBook = bookSold.toDF(bookSchema:_*)
+
+
+val authorWindowSpec = Window.partitionBy("author")
+df.join(dfBook , df("book") === dfBook("book")).withColumn("avg_sold_copy",avg('sold_copy) over authorWindowSpec).show
+
+
+
+
+//select avg(sold_copy) over par
+
+
+///val totalBookSold = df.repartition(4,col("book")).join(dfBook.repartition(4,col("book")) , "book")
+
+/*
+val totalBookSold = df.join(broadcast(dfBook),"book").groupBy("author").sum("sold_copy").as("total_sold_copy")
+//val totalBookSold2 = df.join(dfBook , "book").select("athor","total_sold_copy").reduceBy(_+_)
+totalBookSold.explain
+totalBookSold.show
+//Mapside join example
+// Fact table
+val flights = sc.parallelize(List(
+("SEA", "JFK", "DL", "418","7:00"),("SFO", "LAX", "AA", "1250","7:05"),("SFO", "JFK", "VX", "12","7:05"),("JFK", "LAX", "DL", "424","7:10"),("LAX", "SEA", "DL", "5737", "7:10")))
+//.toDF("source" , "destination" , "airline","no","time")
+
+// Dimension table
+val airports = sc.parallelize(List(("JFK", "John F. Kennedy International Airport", "New York", "NY"),("LAX", "Los Angeles International Airport", "Los Angeles", "CA"),("SEA", "Seattle-Tacoma International Airport", "Seattle", "WA"),("SFO", "San Francisco International Airport", "San Francisco", "CA")))
+//.toDF("cd" , "name" , "city","cityCode")
+
+// Dimension table
+val airlines = sc.parallelize(List(("AA", "American Airlines"), ("DL", "Delta Airlines"),("VX", "Virgin America")))
+//.toDF("cd" , "name")
+
+val airportMap = sc.broadcast(airports.map{case(a,b,c,d) => (a,c)}.collectAsMap)
+val  airlineMap = sc.broadcast(airlines.collectAsMap)
+
+val schema = List("one","two","three","four","five") 
+flights.map{case(a,b,c,d,e) => (airportMap.value.get(a).get,airportMap.value.get(b).get,airlineMap.value.get(c).get,d,e)}.toDF("one","two","three","four","five").explain 
+
+/*import org.apache.spark.sql.functions.{broadcast,col}
+flights.join(broadcast(airports) , flights.col("source") === airports.col("cd")).join(broadcast(airlines) ,flights.col("airline") === airlines("cd") ).explain*/
+
+
+val list =  Seq("1=one" , "2=two")
+list.map{x => x.split("=")}.map{ x => x(0).rlike("[1-9]") && x(1).rlike("[a-z,A-Z]")} */
+
+
+import org.apache.spark.sql.expressions.{Window}
+import org.apache.spark.sql.functions.{col,row_number,dense_rank,lag,lead,concat,from_unixtime,count}
+
+val sessions = sc.parallelize(Seq(("u1","c1","2019-01-01"),("u1","c1","2019-01-05"),("u1","c2","2019-01-07"),("u1","c2","2019-01-08"),("u2","c2","2018-12-01"),("u2","c1","2019-01-06"),("u3","c2","2018-01-06"))).toDF("user" ,"content","date")
+
+val userWindow = Window.partitionBy("user").orderBy(col("date"))
+val contentWindow = Window.partitionBy("content").orderBy(col("date"))
+
+
+sessions.withColumn("date_new", cast(col("date") as date)).show
+
+
+//sessions.withColumn("userOrder" , dense_rank.over(userWindow)).withColumn("contentOrder" , dense_rank.over(contentWindow)).where(col("userOrder") === 1 and col("contentOrder") === 1).show
+
+//sessions.withColumn("next_date" ,lead("date",1,"2099-12-31").over(userWindow)).show
+
+//sessions.withColumn("rank" ,dense_rank.over(userWindow)).withColumn("next_date" ,lead("date",1,"2099-12-31").over(userWindow)).orderBy("user" ,"date")
+
+//val concatWindow = Window.partitionBy("concatedCol").orderBy(col("date"))
+
+//val changedDf = sessions.withColumn("concatedCol" , concat(col("user"),col("content"))).withColumn("isChange" , lag("concatedCol", 1 , "NA").over(userWindow)).orderBy("user","date").filter(col("concatedCol") =!= col("isChange")).explain
+
+//changedDf.show
+
+
+val time_log = Seq((7494212,1535308430),(7494212,535308433),(1475185,15353084)).toDF("user_id","event_date_time")
+//time_log.withColumn("new_time" , from_unixtime(col("event_date_time"))).show
+
+
+val with_count = time_log.groupBy(col("user_id")).agg(count("*").alias("visit_count")).where($"visit_count" <= 2000 and $"visit_count" >= 2).toDF()
+
+with_count.show
+
+time_log.join(with_count, time_log.col("user_id") === with_count.col("user_id"),"left_semi").select("user_id","event_date_time").show
+time_log.join(with_count, time_log.col("user_id") === with_count.col("user_id"),"left_anti").select("user_id","event_date_time").show
