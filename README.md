@@ -1,4 +1,4 @@
-# This repo is to commit Spark Practice 
+# This repo is to commit Spark Examples 
 
 
 ## List example
